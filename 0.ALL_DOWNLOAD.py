@@ -4,10 +4,11 @@ import tarfile
 import argparse
 import random
 import fastavro
-import h5py
 import numpy as np
 import os
 import stat
+import pyarrow as pa
+import pyarrow.parquet as pq
 from pathlib import Path
 
 
@@ -116,7 +117,7 @@ def extract_fits_image(fits_bytes):
     import io
     with gzip.open(io.BytesIO(fits_bytes), 'rb') as gz:
         with fits.open(io.BytesIO(gz.read())) as hdul:
-            image_data = hdul[0].data.astype(np.float64)
+            image_data = hdul[0].data.astype(np.float32)
             image_data = np.nan_to_num(image_data)
             return image_data
 
@@ -124,9 +125,9 @@ def extract_fits_image(fits_bytes):
 def get_next_file_number(output_folder):
     """
     Determines the next file number to use based on existing files in the output folder.
-    Assumes files are named in the format 'data_X.h5' where X is an integer.
+    Assumes files are named in the format 'data_X.parquet' where X is an integer.
     """
-    existing_files = list(Path(output_folder).glob('data_*.h5'))
+    existing_files = list(Path(output_folder).glob('data_*.parquet'))
     if not existing_files:
         return 0
     else:
@@ -134,67 +135,80 @@ def get_next_file_number(output_folder):
         max_number = max(int(file.stem.split('_')[-1]) for file in existing_files)
         return max_number + 1  # Next file number
 
+
+IMAGE_SIZE = 63
+IMAGE_SHAPE = (IMAGE_SIZE, IMAGE_SIZE)
+TRIPLET_SHAPE = (3,) + IMAGE_SHAPE
+
+PARQUET_SCHEMA = pa.schema([
+    # pa.fixed_shape_tensor causes an error:
+    # *** pyarrow.lib.ArrowNotImplementedError: extension
+    # Probably because it is an extension type and it doesn't have a good support yet
+    # ('triplet', pa.fixed_shape_tensor(pa.float32(), TRIPLET_SHAPE)),  # image triplet data
+    ('triplet', pa.list_(pa.float32(), np.prod(TRIPLET_SHAPE))),  # alert stamps data
+    ('objectId', pa.string()),                                    # ZTF Alert object ID, like ZTF18abcxyz
+    ('candid', pa.uint64()),                                      # ZTF Alert candidate ID
+    ('rb', pa.float32()),                                         # Real-Bogus score
+    ('drb', pa.float32()),                                        # Deep-learning Real-Bogus score
+    ('fid', pa.uint8()),                                          # Filter ID
+    ('sciinpseeing', pa.float32()),                               # Seeing in science image
+    ('magpsf', pa.float32()),                                     # Magnitude from PSF-fit
+    ('sigmapsf', pa.float32()),                                   # 1-sigma uncertainty in magpsf
+    ('classtar', pa.float32()),                                   # Star/Galaxy classification score
+    ('ra', pa.float64()),                                         # Right Ascension
+    ('dec', pa.float64()),                                        # Declination
+    ('fwhm', pa.float32()),                                       # Seeing
+    ('aimage', pa.float32()),                                     # Major axis
+    ('bimage', pa.float32()),                                     # Minor axis
+    ('elong', pa.float32()),                                      # Elongation
+    ('nbad', pa.int32()),                                         # Number of bad pixels
+    ('nneg', pa.int32()),                                         # Number of negative pixels
+    ('jd', pa.float64()),                                         # Julian date
+    ('ndethist', pa.uint32()),                                    # Number of detections in history
+    ('ncovhist', pa.uint32()),                                    # Number of coverages in history
+    ('jdstarthist', pa.float64()),                                # Julian date of first detection
+])
+PA_STRUCT_TYPE = pa.struct([pa.field(field.name, field.type) for field in PARQUET_SCHEMA])
+
+
 def save_triplets_and_features_in_batches(records, output_folder, batch_size=1024):
-    Path(output_folder).mkdir(parents=True, exist_ok=True)
+    output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)
 
-    batch_images = []
-    batch_objectIds = []
-    batch_candids = []
-    batch_other_features = []
-    file_number = get_next_file_number(output_folder)  # Get the next file number
+    next_file_number = get_next_file_number(output_folder)
+    output_file = output_folder / f"data_{next_file_number}.parquet"
 
-    for record in records:
-        triplet_images = []
-        correct_size = True
-        for image_type in ['Science', 'Template', 'Difference']:
-            fits_bytes = record[f'cutout{image_type}']['stampData']
-            image = extract_fits_image(fits_bytes)
-            if image.shape == (63, 63):
-                triplet_images.append(image)
-            else:
-                correct_size = False
-                break
+    batch = []
+    with pq.ParquetWriter(output_file, PARQUET_SCHEMA) as writer:
+        for record in records:
+            triplet_images = []
+            correct_size = True
+            for image_type in ['Science', 'Template', 'Difference']:
+                fits_bytes = record[f'cutout{image_type}']['stampData']
+                image = extract_fits_image(fits_bytes)
+                if image.shape == IMAGE_SHAPE:
+                    triplet_images.append(image)
+                else:
+                    correct_size = False
+                    break
 
-        if correct_size:
+            if not correct_size:
+                continue
+
             candidate = record.get('candidate', {})
-            objectId = record.get('objectId', 'NoObjectId')  # Correctly access 'objectId' from the record
-            candid = int(candidate.get('candid', 0))  # Stored separately
 
-            # Numeric features extracted here
-            numeric_features = [
-                candidate.get('rb', np.nan),  # Real bogus score
-                candidate.get('drb', np.nan),  # Deep-learning real bogus score
-                candidate.get('fid', np.nan),  # Filter ID
-                candidate.get('sciinpseeing', np.nan),  # Seeing science image
-                candidate.get('magpsf', np.nan),  # Magnitude from PSF-fit
-                candidate.get('sigmapsf', np.nan),  # 1-sigma uncertainty in magpsf
-                candidate.get('classtar', np.nan),  # Star/Galaxy classification score
-                candidate.get('ra', np.nan),  # Right Ascension
-                candidate.get('dec', np.nan),  # Declination
-                candidate.get('fwhm', np.nan),  # Full Width Half Max
-                candidate.get('aimage', np.nan),  # Major axis
-                candidate.get('bimage', np.nan),  # Minor axis
-                candidate.get('elong', np.nan),  # Elongation
-                candidate.get('nbad', np.nan),  # Number of bad pixels
-                candidate.get('nneg', np.nan),  # Number of negative pixels
-                candidate.get('jd', np.nan),  # Julian date
-                candidate.get('ndethist', np.nan),  # Detection history metrics
-                candidate.get('ncovhist', np.nan),
-                candidate.get('jdstarthist', np.nan),
-                candidate.get('jdendhist', np.nan),
-            ]
+            candidate_names = [name for name in PARQUET_SCHEMA.names if name != 'triplet' and name != 'objectId']
+            batch_record = {
+                'images': np.stack(triplet_images, axis=0).reshape(-1),
+                'objectId': record.get('objectId', 'None'),
+            } | {key: candidate.get(key, None) for key in candidate_names}
 
-            batch_images.append(np.stack(triplet_images, axis=0))
-            batch_objectIds.append(objectId)
-            batch_candids.append(candid)
-            batch_other_features.append(numeric_features)
+            batch.append(batch_record)
 
-            if len(batch_images) == batch_size:
-                save_batch(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features)
-                # Resetting the batches
-                batch_images, batch_objectIds, batch_candids, batch_other_features = [], [], [], []
-                file_number += 1
-
+            if len(batch) == batch_size:
+                save_batch(writer, batch)
+                # Resetting the batch
+                batch = []
 
 
 def safe_remove(file_path):
@@ -211,23 +225,10 @@ def safe_remove(file_path):
         print(f"Error: Could not remove {file_path}. Error: {e}")
 
 
-def save_batch(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features):
-    with h5py.File(f"{output_folder}/data_{file_number}.h5", 'w') as hf:
-        hf.create_dataset('images', data=np.array(batch_images))
-        # Specify UTF-8 encoding for objectIds
-        objectId_dtype = h5py.string_dtype(encoding='utf-8')
-        hf.create_dataset('objectIds', data=np.array(batch_objectIds, dtype=object), dtype=objectId_dtype)
-        hf.create_dataset('candids', data=np.array(batch_candids, dtype=np.int64))
-        hf.create_dataset('features', data=np.array(batch_other_features, dtype=np.float64))
-    print(f"Saved batch in data_{file_number}.h5")
-
-
-def process_avro_data(folder_path, output_folder, batch_size=1024):
-    shuffled_file_paths = shuffle_avro_file_paths(folder_path)
-    records = read_avro_files(shuffled_file_paths)
-    print('Processing Records...')
-    save_triplets_and_features_in_batches(records, output_folder, batch_size)
-    print('Done Saving Triplets.')
+def save_batch(parquet_writer, batch):
+    struct_array = pa.array(batch, type=PA_STRUCT_TYPE)
+    table = pa.Table.from_struct_array(struct_array)
+    parquet_writer.write_table(table)
 
 
 def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size = 1024, min_batch_size=1024*100):
@@ -268,7 +269,7 @@ if __name__ == '__main__':
     parser.add_argument('--extract_to', required=True, help="Directory where tar.gz contents will be extracted")
     parser.add_argument('--output_folder', required=True, help="Directory where processed data will be saved")
     parser.add_argument('--min_file_size', type=int, default=512, help="Minimum file size in bytes to proceed with extraction")
-    parser.add_argument('--batch_size', type=int, default=1024, help="Number of AVRO files in each h5 file")
+    parser.add_argument('--batch_size', type=int, default=1024, help="Number of AVRO files in each parquet row group")
     parser.add_argument('--min_batch_size', type=int, default=1024*100, help="Minimum number of AVRO files to trigger processing")
 
     args = parser.parse_args()
