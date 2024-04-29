@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 import os
 import stat
+from pathlib import Path
 
 
 def generate_date_urls(start_date, end_date, url_template, seed=42):
@@ -29,7 +30,6 @@ def generate_date_urls(start_date, end_date, url_template, seed=42):
     random.seed(seed)  # Set the seed for reproducible shuffling
     random.shuffle(urls)
     return urls
-
 
 
 def safe_extract_tarfile(filepath, extract_to):
@@ -93,6 +93,7 @@ def shuffle_avro_file_paths(folder_path, seed=42):
     random.shuffle(file_paths)
     return file_paths
 
+
 def read_avro_files(file_paths):
     """
     Generator to read records from a list of shuffled .avro file paths.
@@ -104,12 +105,6 @@ def read_avro_files(file_paths):
             reader = fastavro.reader(f)
             for record in reader:
                 yield record
-
-# Usage example
-folder_path = 'D:/STAMP_AD_IMAGES/Data'  # Adjust as needed
-shuffled_file_paths = shuffle_avro_file_paths(folder_path)
-records = read_avro_files(shuffled_file_paths)
-
 
 
 def extract_fits_image(fits_bytes):
@@ -125,7 +120,6 @@ def extract_fits_image(fits_bytes):
             image_data = np.nan_to_num(image_data)
             return image_data
 
-from pathlib import Path
 
 def get_next_file_number(output_folder):
     """
