@@ -1,4 +1,3 @@
-import requests
 from datetime import datetime, timedelta
 import tarfile
 import argparse
@@ -10,6 +9,12 @@ import stat
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
+import gzip
+from astropy.io import fits
+import io
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 
 def generate_date_urls(start_date, end_date, url_template, seed=42):
@@ -50,35 +55,49 @@ def safe_extract_tarfile(filepath, extract_to):
                 print(f"An unexpected error occurred while extracting {member.name}: {e}. Skipping this file.")
 
 
-def download_and_unzip(url, extract_to, min_file_size):
+
+def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
     """
-    Download and extract a single tar.gz file from the given URL.
+    Download and extract a single tar.gz file from the given URL with retry logic for robustness.
     """
     filename = url.split('/')[-1]
     filepath = os.path.join(extract_to, filename)
 
+    # Set up retry strategy
+    retry_strategy = Retry(
+        total=5,  # total number of retries
+        backoff_factor=1,  # exponential backoff factor
+        status_forcelist=[429, 500, 502, 503, 504],  # retry on these status codes
+        allowed_methods=["HEAD", "GET", "OPTIONS"],  # only retry on these HTTP methods
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
     try:
-        with requests.get(url, stream=True) as response:
+        with session.get(url, stream=True) as response:
             response.raise_for_status()
             with open(filepath, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
-        print(f"Downloaded {filename}")
 
         if os.path.getsize(filepath) > min_file_size and filename.endswith("tar.gz"):
             safe_extract_tarfile(filepath, extract_to)
-            print(f"Extracted {filename} in {extract_to}")
             os.remove(filepath)
-            print(f"Removed downloaded file: {filename}")
+            with open(success_log, 'a') as log:
+                log.write(f"Successfully downloaded and extracted: {url}\n")
+            return True
         else:
-            print(f"File {filename} was too small or not a tar.gz file and has been removed.")
             os.remove(filepath)
-            return False  # Indicates failed extraction due to file size
+            with open(error_log, 'a') as log:
+                log.write(f"File {filename} was too small or not a tar.gz and has been removed.\n")
+            return False
     except Exception as e:
-        print(f"An unexpected error occurred while processing {filename}: {e}. Skipping this file.")
         os.remove(filepath)
-        return False  # Indicates failed extraction due to error
-    return True  # Indicates successful extraction
+        with open(error_log, 'a') as log:
+            log.write(f"An unexpected error occurred with {filename}: {e}\n")
+        return False
 
 
 def shuffle_avro_file_paths(folder_path, seed=42):
@@ -108,17 +127,17 @@ def read_avro_files(file_paths):
                 yield record
 
 
-def extract_fits_image(fits_bytes):
+def extract_and_process_image(fits_bytes, issdiffpos):
     """
     Extracts FITS image data from bytes, converts to float64, replaces NaNs with 0.
     """
-    import gzip
-    from astropy.io import fits
-    import io
     with gzip.open(io.BytesIO(fits_bytes), 'rb') as gz:
         with fits.open(io.BytesIO(gz.read())) as hdul:
             image_data = hdul[0].data.astype(np.float32)
             image_data = np.nan_to_num(image_data)
+            # Check if issdiffpos is 'f', and if so, invert the image data
+            if issdiffpos == 'f':
+                image_data *= -1
             return image_data
 
 
@@ -167,11 +186,12 @@ PARQUET_SCHEMA = pa.schema([
     ('ndethist', pa.uint32()),                                    # Number of detections in history
     ('ncovhist', pa.uint32()),                                    # Number of coverages in history
     ('jdstarthist', pa.float64()),                                # Julian date of first detection
+    ('isdiffpos', pa.string()),                                   # Is difference positive?
 ])
 PA_STRUCT_TYPE = pa.struct([pa.field(field.name, field.type) for field in PARQUET_SCHEMA])
 
 
-def save_triplets_and_features_in_batches(records, output_folder, batch_size=1024):
+def save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log):
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -179,36 +199,34 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size=102
     output_file = output_folder / f"data_{next_file_number}.parquet"
 
     batch = []
-    with pq.ParquetWriter(output_file, PARQUET_SCHEMA) as writer:
+    # Set compression to 'gzip' or 'none' if 'snappy' is not supported
+    with pq.ParquetWriter(output_file, PARQUET_SCHEMA, compression='gzip') as writer:
         for record in records:
             triplet_images = []
             correct_size = True
             for image_type in ['Science', 'Template', 'Difference']:
                 fits_bytes = record[f'cutout{image_type}']['stampData']
-                image = extract_fits_image(fits_bytes)
+                issdiffpos = record.get('issdiffpos', 't')
+                image = extract_and_process_image(fits_bytes, issdiffpos if image_type == 'Difference' else 't')
                 if image.shape == IMAGE_SHAPE:
                     triplet_images.append(image)
                 else:
                     correct_size = False
                     break
-
-            if not correct_size:
+            if not correct_size or len(triplet_images) != 3:
                 continue
-
             candidate = record.get('candidate', {})
-
-            candidate_names = [name for name in PARQUET_SCHEMA.names if name != 'triplet' and name != 'objectId']
+            candidate_names = [name for name in PARQUET_SCHEMA.names if name not in ['triplet', 'objectId']]
             batch_record = {
-                'images': np.stack(triplet_images, axis=0).reshape(-1),
+                'triplet': np.stack(triplet_images, axis=0).reshape(-1),
                 'objectId': record.get('objectId', 'None'),
-            } | {key: candidate.get(key, None) for key in candidate_names}
-
+                **{key: candidate.get(key, None) for key in candidate_names}
+            }
             batch.append(batch_record)
-
             if len(batch) == batch_size:
                 save_batch(writer, batch)
-                # Resetting the batch
-                batch = []
+                batch = []  # Resetting the batch
+
 
 
 def safe_remove(file_path):
@@ -231,7 +249,8 @@ def save_batch(parquet_writer, batch):
     parquet_writer.write_table(table)
 
 
-def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size = 1024, min_batch_size=1024*100):
+
+def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_batch_size, success_log, error_log):
     """
     Processes a batch of AVRO files into H5 and then cleans up the AVRO files.
     """
@@ -239,10 +258,10 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size = 1024
     if len(avro_file_paths) >= min_batch_size:
         records = read_avro_files(avro_file_paths[:min_batch_size])
         print('Processing Records...')
-        save_triplets_and_features_in_batches(records, output_folder, batch_size)
+        save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log)
         print('Done Saving Triplets. Cleaning up processed AVRO files...')
         for file_path in avro_file_paths[:min_batch_size]:
-            safe_remove(file_path)  # Use safe_remove instead of os.remove
+            safe_remove(file_path)
         print('Cleanup completed.')
 
 
@@ -251,16 +270,27 @@ def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_s
     url_template = 'https://ztf.uw.edu/alerts/public/ztf_public_{date}.tar.gz'
     urls = generate_date_urls(start_date, end_date, url_template)
 
+    # Ensure the output folder exists
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Initialize log files in the specified output directory
+    success_log = os.path.join(output_folder, "success_log.txt")
+    error_log = os.path.join(output_folder, "error_log.txt")
+
+    # Open and close the log files to ensure they exist
+    open(success_log, 'a').close()
+    open(error_log, 'a').close()
+
     for url in urls:
-        success = download_and_unzip(url, extract_to, min_file_size)
+        # Pass the log file paths as arguments to the download_and_unzip function
+        success = download_and_unzip(url, extract_to, min_file_size, success_log, error_log)
         if not success:
             continue  # Skip to the next URL if extraction failed
 
         avro_files = list(Path(extract_to).glob('*.avro'))
         if len(avro_files) >= min_batch_size:
-            process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, min_batch_size)
+            process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, min_batch_size, success_log, error_log)
 
-        # Implement exit condition if necessary (e.g., based on user input or all URLs processed)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Download, process, and manage AVRO files efficiently.")
@@ -279,4 +309,4 @@ if __name__ == '__main__':
 
 
 # EXAMPLE CODE
-# python 0.ALL_DOWNLOAD.py --start_date 20240101 --end_date 20240421 --extract_to "D:/STAMP_AD_IMAGES/Data" --output_folder "D:/STAMP_AD_IMAGES/ProcessedData" --min_file_size 512 --batch_size 1024 --min_batch_size 102400
+# python 0.ALL_DOWNLOAD.py --start_date 20240101 --end_date 20240421 --extract_to "D:/STAMP_AD_IMAGES/Data_parquet" --output_folder "D:/STAMP_AD_IMAGES/ProcessedData_parquet" --min_file_size 512 --batch_size 102400 --min_batch_size 102400
