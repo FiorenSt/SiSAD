@@ -133,7 +133,7 @@ def extract_and_process_image(fits_bytes, issdiffpos):
     """
     with gzip.open(io.BytesIO(fits_bytes), 'rb') as gz:
         with fits.open(io.BytesIO(gz.read())) as hdul:
-            image_data = hdul[0].data.astype(np.float64)
+            image_data = hdul[0].data.astype(np.float32)
             image_data = np.nan_to_num(image_data)
             # Check if issdiffpos is 'f', and if so, invert the image data
             if issdiffpos == 'f':
