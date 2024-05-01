@@ -68,7 +68,7 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
         total=5,  # total number of retries
         backoff_factor=1,  # exponential backoff factor
         status_forcelist=[429, 500, 502, 503, 504],  # retry on these status codes
-        method_whitelist=["HEAD", "GET", "OPTIONS"]  # only retry on these HTTP methods
+        allowed_methods=["HEAD", "GET", "OPTIONS"],  # only retry on these HTTP methods
     )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session = requests.Session()
