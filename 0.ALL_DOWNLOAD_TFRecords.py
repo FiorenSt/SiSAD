@@ -196,9 +196,12 @@ def get_next_file_number(output_folder):
     :param output_folder: Directory where the TFRecord files are saved.
     :return: Next file number to be used for a new TFRecord file.
     """
-    # Change the glob pattern to match TFRecord files
     existing_files = list(Path(output_folder).glob('data_*.tfrecord'))
-    return 0 if not existing_files else max(int(file.stem.split('_')[-1]) for file in existing_files) + 1
+    if not existing_files:
+        return 0
+    else:
+        max_file_num = max(int(file.stem.split('_')[-1]) for file in existing_files)
+        return max_file_num + 1
 
 
 def save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log):
@@ -335,18 +338,22 @@ def serialize_example(images, objectIds, candids, features):
     return example_proto.SerializeToString()
 
 def save_batch_and_log(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log):
+    """
+    Serializes batches of images and features into TFRecord format and saves them to disk,
+    incrementing the file number for each new batch to prevent overwriting.
+    """
+    filename = f"{output_folder}/data_{file_number}.tfrecord"
     try:
-        filename = f"{output_folder}/data_{file_number}.tfrecord"
         with tf.io.TFRecordWriter(filename) as writer:
             for images, objectId, candid, features in zip(batch_images, batch_objectIds, batch_candids, batch_other_features):
-                example = serialize_example(np.array(images), objectId, candid, np.array(features))
+                example = serialize_example(images, objectId, candid, features)
                 writer.write(example)
-        # with open(success_log, 'a') as log:
-        #     log.write(f"Saved batch in data_{file_number}.tfrecord\n")
+        with open(success_log, 'a') as log:
+            log.write(f"Saved batch in {filename}\n")
         return True
     except Exception as e:
         with open(error_log, 'a') as log:
-            log.write(f"Failed to save batch data_{file_number}.tfrecord: {e}\n")
+            log.write(f"Failed to save batch {filename}: {e}\n")
         return False
 
 
