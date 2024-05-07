@@ -82,20 +82,27 @@ def safe_extract_tarfile(filepath, extract_to, max_retries=3, delay=2):
             print(f"Failed to extract {failed_extractions} files due to errors.")
 
 
-
 def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
     """
-    Download and extract a single tar.gz file from the given URL with retry logic for robustness.
+    Attempts to download and extract a tar.gz file from a URL. It implements retry logic for robustness
+    against network-related errors and ensures clean handling of file operations.
+
+    Parameters:
+    - url: The URL from which to download the file.
+    - extract_to: Directory path where the extracted contents should be stored.
+    - min_file_size: Minimum file size required to proceed with extraction.
+    - success_log: Path to the file where successful operations are logged.
+    - error_log: Path to the file where errors are logged.
     """
     filename = url.split('/')[-1]
     filepath = os.path.join(extract_to, filename)
 
-    # Set up retry strategy
+    # Setup retry strategy for robust network operation
     retry_strategy = Retry(
-        total=5,  # total number of retries
-        backoff_factor=1,  # exponential backoff factor
-        status_forcelist=[429, 500, 502, 503, 504],  # retry on these status codes
-        allowed_methods=["HEAD", "GET", "OPTIONS"],  # only retry on these HTTP methods
+        total=5,  # Total number of retries
+        backoff_factor=1,  # Exponential backoff factor
+        status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry
+        allowed_methods=["HEAD", "GET", "OPTIONS"]  # HTTP methods to retry
     )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session = requests.Session()
@@ -103,27 +110,30 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
     session.mount("http://", adapter)
 
     try:
-        with session.get(url, stream=True) as response:
+        with session.get(url, stream=True, timeout=10) as response:  # Set timeout to 10 seconds
             response.raise_for_status()
             with open(filepath, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
 
-        if os.path.getsize(filepath) > min_file_size and filename.endswith("tar.gz"):
+        # Check if the downloaded file meets the size requirement before processing
+        if os.path.exists(filepath) and os.path.getsize(filepath) > min_file_size:
             safe_extract_tarfile(filepath, extract_to)
             os.remove(filepath)
             with open(success_log, 'a') as log:
                 log.write(f"Successfully downloaded and extracted: {url}\n")
             return True
         else:
-            os.remove(filepath)
+            if os.path.exists(filepath):
+                os.remove(filepath)
             with open(error_log, 'a') as log:
                 log.write(f"File {filename} was too small or not a tar.gz and has been removed.\n")
             return False
-    except Exception as e:
-        os.remove(filepath)
+    except requests.exceptions.RequestException as e:
+        if os.path.exists(filepath):
+            os.remove(filepath)
         with open(error_log, 'a') as log:
-            log.write(f"An unexpected error occurred with {filename}: {e}\n")
+            log.write(f"Failed to download {url}: {e}\n")
         return False
 
 def shuffle_avro_file_paths(folder_path, seed=42):
