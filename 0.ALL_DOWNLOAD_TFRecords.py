@@ -205,10 +205,6 @@ def get_next_file_number(output_folder):
 
 
 def save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log):
-    """
-    Saves batches of triplets and features into TFRecord files.
-    Returns paths of successfully processed files and any remaining records if they don't fill a full batch.
-    """
     Path(output_folder).mkdir(parents=True, exist_ok=True)
     batch_images = []
     batch_objectIds = []
@@ -236,7 +232,10 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, su
             candidate = record.get('candidate', {})
             objectId = record.get('objectId', 'NoObjectId')
             candid = int(candidate.get('candid', 0))
-            numeric_features = [float(candidate.get(k, np.nan)) for k in ['rb', 'drb', 'sciinpseeing', 'magpsf', 'sigmapsf', 'classtar', 'ra', 'dec', 'fwhm', 'aimage', 'bimage', 'elong', 'nbad', 'nneg', 'jd', 'ndethist', 'ncovhist', 'jdstarthist', 'jdendhist']]
+            numeric_features = [float(candidate.get(k, np.nan)) for k in
+                                ['rb', 'drb', 'sciinpseeing', 'magpsf', 'sigmapsf', 'classtar', 'ra', 'dec', 'fwhm',
+                                 'aimage', 'bimage', 'elong', 'nbad', 'nneg', 'jd', 'ndethist', 'ncovhist',
+                                 'jdstarthist', 'jdendhist']]
             numeric_features.append(1 if candidate.get('isdiffpos', 't') == 't' else 0)
             batch_images.append(np.stack(triplet_images, axis=0))
             batch_objectIds.append(objectId)
@@ -244,19 +243,15 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, su
             batch_other_features.append(numeric_features)
 
             if len(batch_images) == batch_size:
-                if save_batch_and_log(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log):
-                    successfully_saved_files.extend([record['file_path'] for record in records])
+                if save_batch_and_log(output_folder, file_number, batch_images, batch_objectIds, batch_candids,
+                                      batch_other_features, success_log, error_log):
+                    successfully_saved_files.append(f"{output_folder}/data_{file_number}.tfrecord")
                 batch_images, batch_objectIds, batch_candids, batch_other_features = [], [], [], []
                 file_number += 1
-        else:
-            remaining_records.append(record)
 
-    # Handle any remaining records that didn't complete a full batch
-    if len(batch_images) >= batch_size:
-        if save_batch_and_log(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log):
-            successfully_saved_files.extend([record['file_path'] for record in records])
-        batch_images, batch_objectIds, batch_candids, batch_other_features = [], [], [], []
-        file_number += 1
+    # Add remaining records that didn't make into a full batch to the remaining_records list
+    if batch_images:
+        remaining_records.extend(records[-len(batch_images):])
 
     return successfully_saved_files, remaining_records
 
