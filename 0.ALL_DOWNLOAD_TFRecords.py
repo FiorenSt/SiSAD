@@ -205,17 +205,21 @@ def get_next_file_number(output_folder):
 
 
 def save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log):
+    """
+    Processes records into TFRecord format and stores them. Also tracks which .avro files were used.
+    """
     Path(output_folder).mkdir(parents=True, exist_ok=True)
     batch_images = []
     batch_objectIds = []
     batch_candids = []
     batch_other_features = []
     successfully_saved_files = []
-    remaining_records = []
+    avro_files_used = []
 
     file_number = get_next_file_number(output_folder)
 
     for record in records:
+        avro_files_used.append(record['file_path'])
         triplet_images = []
         correct_size = True
         for image_type in ['Science', 'Template', 'Difference']:
@@ -249,11 +253,7 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, su
                 batch_images, batch_objectIds, batch_candids, batch_other_features = [], [], [], []
                 file_number += 1
 
-    # Add remaining records that didn't make into a full batch to the remaining_records list
-    if batch_images:
-        remaining_records.extend(records[-len(batch_images):])
-
-    return successfully_saved_files, remaining_records
+    return successfully_saved_files, avro_files_used
 
 
 def safe_remove(file_path):
@@ -281,6 +281,7 @@ def safe_remove(file_path):
 def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_avro_files, success_log, error_log):
     """
     Processes .avro files into TFRecords if they meet the minimum batch size requirement.
+    After processing, it cleans up the original .avro files that were successfully converted to TFRecords.
     """
     avro_file_paths = shuffle_avro_file_paths(folder_path)
     if len(avro_file_paths) < min_avro_files:
@@ -289,21 +290,18 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_a
 
     records = read_avro_files(avro_file_paths)
     print('Processing Records...')
-    successfully_saved_files, remaining_records = save_triplets_and_features_in_batches(
+    successfully_saved_files, avro_files_used = save_triplets_and_features_in_batches(
         records, output_folder, batch_size, success_log, error_log)
+
     print('Done Saving Triplets. Cleaning up processed AVRO files...')
 
-    # Cleanup successfully processed files
-    for file_path in successfully_saved_files:
+    # Ensure we only remove .avro files that were processed
+    for file_path in avro_files_used:
         safe_remove(file_path)
+
     print('Cleanup completed.')
 
-    # If remaining records still meet the minimum batch size, process them
-    if len(remaining_records) >= min_avro_files:
-        additional_saved_files, _ = save_triplets_and_features_in_batches(
-            remaining_records, output_folder, batch_size, success_log, error_log)
-        for file_path in additional_saved_files:
-            safe_remove(file_path)
+
 
 
 def _float_feature(value):
