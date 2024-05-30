@@ -297,56 +297,56 @@ if __name__ == '__main__':
 
 
 
-import tensorflow as tf
+# import tensorflow as tf
 
 
-def parse_tfrecord(example_proto):
-    # Define the expected structure of your TFRecord data
-    feature_description = {
-        'images': tf.io.FixedLenFeature([], tf.string),  # Images stored as raw byte strings
-        'objectIds': tf.io.FixedLenFeature([], tf.string),  # Object IDs stored as byte strings
-        'candids': tf.io.FixedLenFeature([], tf.int64),  # Candid numbers as int64
-        'features': tf.io.FixedLenFeature([], tf.string),  # Features stored as raw byte strings
-    }
-    # Parse the input tf.train.Example proto using the dictionary above
-    features = tf.io.parse_single_example(example_proto, feature_description)
+# def parse_tfrecord(example_proto):
+#     # Define the expected structure of your TFRecord data
+#     feature_description = {
+#         'images': tf.io.FixedLenFeature([], tf.string),  # Images stored as raw byte strings
+#         'objectIds': tf.io.FixedLenFeature([], tf.string),  # Object IDs stored as byte strings
+#         'candids': tf.io.FixedLenFeature([], tf.int64),  # Candid numbers as int64
+#         'features': tf.io.FixedLenFeature([], tf.string),  # Features stored as raw byte strings
+#     }
+#     # Parse the input tf.train.Example proto using the dictionary above
+#     features = tf.io.parse_single_example(example_proto, feature_description)
 
-    # Decode the images and features correctly
-    images = tf.io.parse_tensor(features['images'], out_type=tf.float32)  # Assuming images were saved as float32
-    images = tf.reshape(images, shape=(3, 63, 63))  # Adjust shape as necessary
+#     # Decode the images and features correctly
+#     images = tf.io.parse_tensor(features['images'], out_type=tf.float32)  # Assuming images were saved as float32
+#     images = tf.reshape(images, shape=(3, 63, 63))  # Adjust shape as necessary
 
-    # Here, ensure the type matches how features were stored. If they were stored as float64, parse as float64:
-    features_decoded = tf.io.parse_tensor(features['features'], out_type=tf.float64)  # Adjust if stored as float64
+#     # Here, ensure the type matches how features were stored. If they were stored as float64, parse as float64:
+#     features_decoded = tf.io.parse_tensor(features['features'], out_type=tf.float64)  # Adjust if stored as float64
 
-    # Return images and other metadata
-    return images, features['objectIds'], features['candids'], features_decoded
-
-
-def read_tfrecords(file_path):
-    # Create a dataset object from the TFRecord file
-    dataset = tf.data.TFRecordDataset(file_path)
-
-    # Map the parsing function to each element in the dataset
-    dataset = dataset.map(parse_tfrecord)
-
-    return dataset
+#     # Return images and other metadata
+#     return images, features['objectIds'], features['candids'], features_decoded
 
 
-# Specify the path to your TFRecord file
-tfrecord_file = 'D:/STAMP_AD_IMAGES/ProcessedData_TFRecords_GOOD/data_0.tfrecord'
+# def read_tfrecords(file_path):
+#     # Create a dataset object from the TFRecord file
+#     dataset = tf.data.TFRecordDataset(file_path)
 
-# Read the TFRecord file
-dataset = read_tfrecords(tfrecord_file)
+#     # Map the parsing function to each element in the dataset
+#     dataset = dataset.map(parse_tfrecord)
+
+#     return dataset
 
 
-import matplotlib.pyplot as plt
+# # Specify the path to your TFRecord file
+# tfrecord_file = 'D:/STAMP_AD_IMAGES/ProcessedData_TFRecords_GOOD/data_0.tfrecord'
 
-# Iterate over the first few records and print the content
-for images, objectIds, candids, features in dataset.take(30):  # Adjust `.take()` for more samples
-    print("Image shape:", images.shape)
-    plt.figure()
-    plt.imshow(images[2,:,:])
-    # print("Object ID:", objectIds.numpy().decode('utf-8'))
-    # print("Candid:", candids.numpy())
-    # print("Features shape:", features.shape)
-    # print("Sample features:", features.numpy()[:5])  # Print first few elements of features
+# # Read the TFRecord file
+# dataset = read_tfrecords(tfrecord_file)
+
+
+# import matplotlib.pyplot as plt
+
+# # Iterate over the first few records and print the content
+# for images, objectIds, candids, features in dataset.take(30):  # Adjust `.take()` for more samples
+#     print("Image shape:", images.shape)
+#     plt.figure()
+#     plt.imshow(images[2,:,:])
+#     # print("Object ID:", objectIds.numpy().decode('utf-8'))
+#     # print("Candid:", candids.numpy())
+#     # print("Features shape:", features.shape)
+#     # print("Sample features:", features.numpy()[:5])  # Print first few elements of features
