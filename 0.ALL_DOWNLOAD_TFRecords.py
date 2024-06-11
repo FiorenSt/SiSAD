@@ -256,6 +256,7 @@ def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_s
 
     # Ensure the output folder exists
     os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(extract_to, exist_ok=True)
 
     # Initialize log files in the specified output directory
     success_log = os.path.join(output_folder, "success_log.txt")
