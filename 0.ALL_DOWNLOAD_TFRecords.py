@@ -13,6 +13,7 @@ import io
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import tensorflow as tf
 
 
 def generate_date_urls(start_date, end_date, url_template, seed=42):
@@ -207,8 +208,6 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_b
             safe_remove(file_path)  # Use safe_remove instead of os.remove
         print('Cleanup completed.')
 
-
-import tensorflow as tf
 
 def _float_feature(value):
     """Returns a float_list from a float / double."""
