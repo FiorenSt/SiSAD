@@ -23,10 +23,5 @@ BATCH_FILE=$(ls ${BATCH_DIR}/batch_*.txt | sed -n "${SLURM_ARRAY_TASK_ID}p")
 # Unique identifier for the batch
 UNIQUE_ID=$(basename ${BATCH_FILE} .txt)
 
-# Read the file list from the batch file
-URLS=$(cat ${BATCH_FILE})
-
-# Run the Python script for each URL in the batch
-for URL in ${URLS}; do
-    python ${SCRIPT_PATH} --start_date 20240101 --end_date 20240421 --extract_to "${EXTRACT_TO}" --output_folder "${OUTPUT_FOLDER}" --min_file_size 512 --batch_size 2048 --min_batch_size 10240 --unique_id ${UNIQUE_ID}
-done
+# Run the Python script with the batch file
+python ${SCRIPT_PATH} --urls_file "${BATCH_FILE}" --extract_to "${EXTRACT_TO}" --output_folder "${OUTPUT_FOLDER}" --min_file_size 512 --batch_size 2048 --min_batch_size 10240 --unique_id ${UNIQUE_ID}
