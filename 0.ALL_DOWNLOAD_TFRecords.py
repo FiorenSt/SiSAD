@@ -1,6 +1,3 @@
-Sure, here's the updated code with the unique identifier for sbatch and comments retained or updated accordingly:
-
-```python
 from datetime import datetime, timedelta
 import tarfile
 import argparse
