@@ -1,3 +1,6 @@
+Sure, here's the updated code with the unique identifier for sbatch and comments retained or updated accordingly:
+
+```python
 from datetime import datetime, timedelta
 import tarfile
 import argparse
@@ -27,17 +30,23 @@ def generate_date_urls(start_date, end_date, url_template, seed=42):
     :param seed: Seed for the random number generator to ensure reproducibility.
     :return: List of URLs with dates, in randomized order
     """
-    start = datetime.strptime(start_date, "%Y%m%d")
-    end = datetime.strptime(end_date, "%Y%m%d")
-    date_generated = [start + timedelta(days=x) for x in range(0, (end-start).days + 1)]
+    start = datetime.strptime(start_date, "%Y%mdd")
+    end = datetime.strptime(end_date, "%Y%mdd")
+    date_generated = [start + timedelta(days=x) for x in range((end - start).days + 1)]
 
     urls = [url_template.format(date=date.strftime("%Y%m%d")) for date in date_generated]
-    random.seed(seed)  # Set the seed for reproducible shuffling
+    random.seed(seed)
     random.shuffle(urls)
     return urls
 
 
 def safe_extract_tarfile(filepath, extract_to):
+    """
+    Safely extracts a tar.gz file to the specified directory.
+
+    :param filepath: Path to the tar.gz file
+    :param extract_to: Directory where the contents will be extracted
+    """
     with tarfile.open(filepath, "r:gz") as tar:
         for member in tar.getmembers():
             try:
@@ -51,6 +60,12 @@ def safe_extract_tarfile(filepath, extract_to):
 def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
     """
     Download and extract a single tar.gz file from the given URL with retry logic for robustness.
+
+    :param url: URL of the tar.gz file to download
+    :param extract_to: Directory where the contents will be extracted
+    :param min_file_size: Minimum file size to consider the download successful
+    :param success_log: Path to the success log file
+    :param error_log: Path to the error log file
     """
     filename = url.split('/')[-1]
     filepath = os.path.join(extract_to, filename)
@@ -91,20 +106,43 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
             log.write(f"An unexpected error occurred with {filename}: {e}\n")
         return False
 
+
 def shuffle_avro_file_paths(folder_path, seed=42):
+    """
+    Shuffle the list of AVRO file paths in the specified folder.
+
+    :param folder_path: Path to the folder containing AVRO files
+    :param seed: Seed for the random number generator to ensure reproducibility.
+    :return: Shuffled list of AVRO file paths
+    """
     random.seed(seed)
     file_paths = list(Path(folder_path).glob('*.avro'))
     random.shuffle(file_paths)
     return file_paths
 
+
 def read_avro_files(file_paths):
+    """
+    Generator function to read records from a list of AVRO files.
+
+    :param file_paths: List of AVRO file paths
+    :yield: Records from the AVRO files
+    """
     for file_path in file_paths:
         with open(file_path, 'rb') as f:
             reader = fastavro.reader(f)
             for record in reader:
                 yield record
 
+
 def extract_and_process_image(fits_bytes, issdiffpos):
+    """
+    Extracts and processes FITS image data from gzipped bytes.
+
+    :param fits_bytes: Gzipped bytes of the FITS image
+    :param issdiffpos: Indicator if the image is a difference image (inverts if 'f')
+    :return: Processed image data as a numpy array
+    """
     with gzip.open(io.BytesIO(fits_bytes), 'rb') as gz:
         with fits.open(io.BytesIO(gz.read())) as hdul:
             image_data = hdul[0].data.astype(np.float32)
@@ -114,25 +152,42 @@ def extract_and_process_image(fits_bytes, issdiffpos):
             return image_data
 
 
-def get_next_file_number(output_folder):
-    existing_files = list(Path(output_folder).glob('data_*.h5'))
+def get_next_file_number(output_folder, unique_id):
+    """
+    Get the next file number for saving the output files in the output folder.
+
+    :param output_folder: Directory where processed data will be saved
+    :param unique_id: Unique identifier for the batch run
+    :return: Next file number for naming the output file
+    """
+    existing_files = list(Path(output_folder).glob(f'data_{unique_id}_*.tfrecord'))
     return 0 if not existing_files else max(int(file.stem.split('_')[-1]) for file in existing_files) + 1
 
-def save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log):
+
+def save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log):
+    """
+    Save triplet images and features in batches as TFRecord files.
+
+    :param records: Generator of records to process
+    :param output_folder: Directory where processed data will be saved
+    :param batch_size: Number of records in each batch
+    :param unique_id: Unique identifier for the batch run
+    :param success_log: Path to the success log file
+    :param error_log: Path to the error log file
+    """
     Path(output_folder).mkdir(parents=True, exist_ok=True)
     batch_images = []
     batch_objectIds = []
     batch_candids = []
     batch_other_features = []
-    file_number = get_next_file_number(output_folder)
+    file_number = get_next_file_number(output_folder, unique_id)
 
     for record in records:
         triplet_images = []
         correct_size = True
         for image_type in ['Science', 'Template', 'Difference']:
             fits_bytes = record[f'cutout{image_type}']['stampData']
-            # Extract issdiffpos and convert it directly in the call
-            issdiffpos = record.get('issdiffpos',  np.nan)  # Assume 't' as default if missing
+            issdiffpos = record.get('issdiffpos', 't')
             image = extract_and_process_image(fits_bytes, issdiffpos if image_type == 'Difference' else 't')
             if image.shape == (63, 63):
                 triplet_images.append(image)
@@ -165,47 +220,56 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, su
                 int(candidate.get('ncovhist', np.nan)),
                 float(candidate.get('jdstarthist', np.nan)),
                 float(candidate.get('jdendhist', np.nan)),
-                1 if candidate.get('isdiffpos',  np.nan) == 't' else 0  # Convert 't'/'f' to 1/0
+                1 if candidate.get('isdiffpos', 't') == 't' else 0
             ]
             batch_images.append(np.stack(triplet_images, axis=0))
             batch_objectIds.append(objectId)
             batch_candids.append(candid)
             batch_other_features.append(numeric_features)
 
-            if len(batch_images) == batch_size:
-                save_batch_and_log(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log)
+            if len
+
+(batch_images) == batch_size:
+                save_batch_and_log(output_folder, file_number, unique_id, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log)
                 batch_images, batch_objectIds, batch_candids, batch_other_features = [], [], [], []
                 file_number += 1
 
 
-
 def safe_remove(file_path):
-    try:
-        # Remove read-only attribute, if it's set
-        os.chmod(file_path, stat.S_IWRITE)
+    """
+    Safely remove a file, handling permission errors.
 
-        # Attempt to delete the file
+    :param file_path: Path to the file to remove
+    """
+    try:
+        os.chmod(file_path, stat.S_IWRITE)
         os.remove(file_path)
-        # print(f"Successfully removed {file_path}")
     except PermissionError as e:
         print(f"PermissionError: Could not remove {file_path}. Error: {e}")
     except Exception as e:
         print(f"Error: Could not remove {file_path}. Error: {e}")
 
 
-
-def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_batch_size, success_log, error_log):
+def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_batch_size, unique_id, success_log, error_log):
     """
-    Processes a batch of AVRO files into H5 and then cleans up the AVRO files.
+    Processes a batch of AVRO files into TFRecords and then cleans up the AVRO files.
+
+    :param folder_path: Path to the folder containing AVRO files
+    :param output_folder: Directory where processed data will be saved
+    :param batch_size: Number of records in each batch
+    :param min_batch_size: Minimum number of AVRO files to trigger processing
+    :param unique_id: Unique identifier for the batch run
+    :param success_log: Path to the success log file
+    :param error_log: Path to the error log file
     """
     avro_file_paths = shuffle_avro_file_paths(folder_path)
     if len(avro_file_paths) >= min_batch_size:
         records = read_avro_files(avro_file_paths[:min_batch_size])
         print('Processing Records...')
-        save_triplets_and_features_in_batches(records, output_folder, batch_size, success_log, error_log)
+        save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
         print('Done Saving Triplets. Cleaning up processed AVRO files...')
         for file_path in avro_file_paths[:min_batch_size]:
-            safe_remove(file_path)  # Use safe_remove instead of os.remove
+            safe_remove(file_path)
         print('Cleanup completed.')
 
 
@@ -213,44 +277,81 @@ def _float_feature(value):
     """Returns a float_list from a float / double."""
     return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
 
+
 def _int64_feature(value):
     """Returns an int64_list from a bool / enum / int / uint."""
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
+
 def _bytes_feature(value):
     """Returns a bytes_list from a string / byte."""
     if isinstance(value, type(tf.constant(0))):
-        value = value.numpy()  # BytesList won't unpack a string from an EagerTensor.
+        value = value.numpy()
     elif isinstance(value, str):
         value = value.encode('utf-8')
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
+
 def serialize_example(images, objectIds, candids, features):
+    """
+    Serialize example data into a TFRecord format.
+
+    :param images: Array of images
+    :param objectIds: Object IDs as a string
+    :param candids: Candid numbers as an integer
+    :param features: Array of features
+    :return: Serialized example as a string
+    """
     feature = {
         'images': _bytes_feature(tf.io.serialize_tensor(images).numpy()),
-        'objectIds': _bytes_feature(objectIds),  # Object ID as a string, converted to bytes
+        'objectIds': _bytes_feature(objectIds),
         'candids': _int64_feature(candids),
         'features': _bytes_feature(tf.io.serialize_tensor(features).numpy()),
     }
     example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
     return example_proto.SerializeToString()
 
-def save_batch_and_log(output_folder, file_number, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log):
+
+def save_batch_and_log(output_folder, file_number, unique_id, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log):
+    """
+    Save a batch of images and features to a TFRecord file and log the success or failure.
+
+    :param output_folder: Directory where processed data will be saved
+    :param file_number: Current file number
+    :param unique_id: Unique identifier for the batch run
+    :param batch_images: List of image batches
+    :param batch_objectIds: List of object IDs
+    :param batch_candids: List of candid numbers
+    :param batch_other_features: List of other features
+    :param success_log: Path to the success log file
+    :param error_log: Path to the error log file
+    """
     try:
-        filename = f"{output_folder}/data_{file_number}.tfrecord"
+        filename = f"{output_folder}/data_{unique_id}_{file_number}.tfrecord"
         with tf.io.TFRecordWriter(filename) as writer:
             for images, objectId, candid, features in zip(batch_images, batch_objectIds, batch_candids, batch_other_features):
                 example = serialize_example(np.array(images), objectId, candid, np.array(features))
                 writer.write(example)
         with open(success_log, 'a') as log:
-            log.write(f"Saved batch in data_{file_number}.tfrecord\n")
+            log.write(f"Saved batch in data_{unique_id}_{file_number}.tfrecord\n")
     except Exception as e:
         with open(error_log, 'a') as log:
-            log.write(f"Failed to save batch data_{file_number}.tfrecord: {e}\n")
+            log.write(f"Failed to save batch data_{unique_id}_{file_number}.tfrecord: {e}\n")
 
 
+def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_size, min_batch_size, unique_id):
+    """
+    Main function to download, process, and manage AVRO files efficiently.
 
-def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_size, min_batch_size):
+    :param start_date: Start date in 'YYYYMMDD' format
+    :param end_date: End date in 'YYYYMMDD' format
+    :param extract_to: Directory where tar.gz contents will be extracted
+    :param output_folder: Directory where processed data will be saved
+    :param min_file_size: Minimum file size in bytes to proceed with extraction
+    :param batch_size: Number of records in each batch
+    :param min_batch_size: Minimum number of AVRO files to trigger processing
+    :param unique_id: Unique identifier for the batch run
+    """
     url_template = 'https://ztf.uw.edu/alerts/public/ztf_public_{date}.tar.gz'
     urls = generate_date_urls(start_date, end_date, url_template)
 
@@ -274,7 +375,8 @@ def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_s
 
         avro_files = list(Path(extract_to).glob('*.avro'))
         if len(avro_files) >= min_batch_size:
-            process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, min_batch_size, success_log, error_log)
+            process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, min_batch_size, unique_id, success_log, error_log)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Download, process, and manage AVRO files efficiently.")
@@ -285,20 +387,17 @@ if __name__ == '__main__':
     parser.add_argument('--min_file_size', type=int, default=512, help="Minimum file size in bytes to proceed with extraction")
     parser.add_argument('--batch_size', type=int, default=20480, help="Number of AVRO files in each h5 file")
     parser.add_argument('--min_batch_size', type=int, default=204800, help="Minimum number of AVRO files to trigger processing")
+    parser.add_argument('--unique_id', required=True, help="Unique identifier for the batch run")
 
     args = parser.parse_args()
-    main(args.start_date, args.end_date, args.extract_to, args.output_folder, args.min_file_size, args.batch_size, args.min_batch_size)
+    main(args.start_date, args.end_date, args.extract_to, args.output_folder, args.min_file_size, args.batch_size, args.min_batch_size, args.unique_id)
 
 
 
 # EXAMPLE CODE
-# python 0.ALL_DOWNLOAD_TFRecords.py --start_date 20240101 --end_date 20240421 --extract_to "D:/STAMP_AD_IMAGES/Data" --output_folder "D:/STAMP_AD_IMAGES/ProcessedData_TFRecords" --min_file_size 512 --batch_size 2048 --min_batch_size 10240
-
-
-
+# python 0.ALL_DOWNLOAD_TFRecords.py --start_date 20240101 --end_date 20240421 --extract_to "D:/STAMP_AD_IMAGES/Data" --output_folder "D:/STAMP_AD_IMAGES/ProcessedData_TFRecords" --min_file_size 512 --batch_size 2048 --min_batch_size 10240 --unique_id batch1
 
 # import tensorflow as tf
-
 
 # def parse_tfrecord(example_proto):
 #     # Define the expected structure of your TFRecord data
@@ -310,6 +409,9 @@ if __name__ == '__main__':
 #     }
 #     # Parse the input tf.train.Example proto using the dictionary above
 #     features = tf.io.parse_single_example(example_proto, feature_description)
+
+#     # Decode the images and features correctly
+#     images = tf.io.parse_tensor
 
 #     # Decode the images and features correctly
 #     images = tf.io.parse_tensor(features['images'], out_type=tf.float32)  # Assuming images were saved as float32
