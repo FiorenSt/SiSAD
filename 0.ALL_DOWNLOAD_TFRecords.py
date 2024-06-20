@@ -16,22 +16,16 @@ from requests.packages.urllib3.util.retry import Retry
 import tensorflow as tf
 
 
-def generate_date_urls(start_date, end_date, url_template, seed=42):
+def load_urls_from_file(file_path, seed=42):
     """
-    Generates URLs based on a range of dates and shuffles them to randomize the order.
-    Uses a seed for reproducible shuffling.
+    Loads URLs from a text file and shuffles them.
 
-    :param start_date: Start date in "YYYYMMDD" format
-    :param end_date: End date in "YYYYMMDD" format
-    :param url_template: URL template with a placeholder for the date
+    :param file_path: Path to the text file containing URLs
     :param seed: Seed for the random number generator to ensure reproducibility.
-    :return: List of URLs with dates, in randomized order
+    :return: List of URLs in randomized order
     """
-    start = datetime.strptime(start_date, "%Y%mdd")
-    end = datetime.strptime(end_date, "%Y%mdd")
-    date_generated = [start + timedelta(days=x) for x in range((end - start).days + 1)]
-
-    urls = [url_template.format(date=date.strftime("%Y%m%d")) for date in date_generated]
+    with open(file_path, 'r') as file:
+        urls = [line.strip() for line in file.readlines()]
     random.seed(seed)
     random.shuffle(urls)
     return urls
@@ -336,12 +330,11 @@ def save_batch_and_log(output_folder, file_number, unique_id, batch_images, batc
             log.write(f"Failed to save batch data_{unique_id}_{file_number}.tfrecord: {e}\n")
 
 
-def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_size, min_batch_size, unique_id):
+def main(urls_file, extract_to, output_folder, min_file_size, batch_size, min_batch_size, unique_id):
     """
     Main function to download, process, and manage AVRO files efficiently.
 
-    :param start_date: Start date in 'YYYYMMDD' format
-    :param end_date: End date in 'YYYYMMDD' format
+    :param urls_file: Path to the text file containing URLs
     :param extract_to: Directory where tar.gz contents will be extracted
     :param output_folder: Directory where processed data will be saved
     :param min_file_size: Minimum file size in bytes to proceed with extraction
@@ -349,8 +342,7 @@ def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_s
     :param min_batch_size: Minimum number of AVRO files to trigger processing
     :param unique_id: Unique identifier for the batch run
     """
-    url_template = 'https://ztf.uw.edu/alerts/public/ztf_public_{date}.tar.gz'
-    urls = generate_date_urls(start_date, end_date, url_template)
+    urls = load_urls_from_file(urls_file)
 
     # Ensure the output folder exists
     os.makedirs(output_folder, exist_ok=True)
@@ -377,8 +369,7 @@ def main(start_date, end_date, extract_to, output_folder, min_file_size, batch_s
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Download, process, and manage AVRO files efficiently.")
-    parser.add_argument('--start_date', required=True, help="Start date in 'YYYYMMDD' format")
-    parser.add_argument('--end_date', required=True, help="End date in 'YYYYMMDD' format")
+    parser.add_argument('--urls_file', required=True, help="Path to the text file containing URLs")
     parser.add_argument('--extract_to', required=True, help="Directory where tar.gz contents will be extracted")
     parser.add_argument('--output_folder', required=True, help="Directory where processed data will be saved")
     parser.add_argument('--min_file_size', type=int, default=512, help="Minimum file size in bytes to proceed with extraction")
@@ -387,7 +378,7 @@ if __name__ == '__main__':
     parser.add_argument('--unique_id', required=True, help="Unique identifier for the batch run")
 
     args = parser.parse_args()
-    main(args.start_date, args.end_date, args.extract_to, args.output_folder, args.min_file_size, args.batch_size, args.min_batch_size, args.unique_id)
+    main(args.urls_file, args.extract_to, args.output_folder, args.min_file_size, args.batch_size, args.min_batch_size, args.unique_id)
 
 
 
