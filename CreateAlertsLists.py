@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import os
+import random
 
 # Constants
 BASE_URL = "https://ztf.uw.edu/alerts/public/"
@@ -37,6 +38,9 @@ def divide_into_batches(links, batch_size_gb):
     :param batch_size_gb: Desired batch size in GB
     :return: A list of batches where each batch is a list of file links
     """
+    # Shuffle the links before dividing into batches
+    random.shuffle(links)
+    
     batches = []
     current_batch = []
     current_batch_size = 0
