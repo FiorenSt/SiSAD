@@ -86,6 +86,7 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
             os.remove(filepath)
             with open(success_log, 'a') as log:
                 log.write(f"Successfully downloaded and extracted: {url}\n")
+            print(f"Successfully downloaded and extracted: {url}")
             return True
         else:
             os.remove(filepath)
@@ -97,7 +98,6 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
         with open(error_log, 'a') as log:
             log.write(f"An unexpected error occurred with {filename}: {e}\n")
         return False
-
 
 def shuffle_avro_file_paths(folder_path, seed=42):
     """
@@ -247,7 +247,7 @@ def safe_remove(file_path):
 
 def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, unique_id, success_log, error_log):
     """
-    Processes all AVRO files into TFRecords and then cleans up the AVRO files.
+    Processes all AVRO files into TFRecords.
 
     :param folder_path: Path to the folder containing AVRO files
     :param output_folder: Directory where processed data will be saved
@@ -260,11 +260,7 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, uniqu
     records = read_avro_files(avro_file_paths)
     print('Processing Records...')
     save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
-    print('Done Saving Triplets. Cleaning up processed AVRO files...')
-    for file_path in avro_file_paths:
-        safe_remove(file_path)
-    print('Cleanup completed.')
-
+    print('Done Saving Triplets.')
 
 def _float_feature(value):
     """Returns a float_list from a float / double."""
