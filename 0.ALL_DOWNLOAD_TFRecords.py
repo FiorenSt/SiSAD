@@ -218,9 +218,7 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
             batch_candids.append(candid)
             batch_other_features.append(numeric_features)
 
-            if len
-
-(batch_images) == batch_size:
+            if len(batch_images) == batch_size:
                 save_batch_and_log(output_folder, file_number, unique_id, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log)
                 batch_images, batch_objectIds, batch_candids, batch_other_features = [], [], [], []
                 file_number += 1
