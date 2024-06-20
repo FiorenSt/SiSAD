@@ -14,6 +14,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 import tensorflow as tf
+import shutil
 
 
 def load_urls_from_file(file_path, seed=42):
@@ -226,7 +227,7 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
     # Discard incomplete batch if any
     if len(batch_images) > 0:
         with open(error_log, 'a') as log:
-          log.write(f"Incomplete batch with {len(batch_images)} records discarded.\n")
+            log.write(f"Incomplete batch with {len(batch_images)} records discarded.\n")
 
 
 def safe_remove(file_path):
@@ -244,27 +245,25 @@ def safe_remove(file_path):
         print(f"Error: Could not remove {file_path}. Error: {e}")
 
 
-def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, min_batch_size, unique_id, success_log, error_log):
+def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, unique_id, success_log, error_log):
     """
-    Processes a batch of AVRO files into TFRecords and then cleans up the AVRO files.
+    Processes all AVRO files into TFRecords and then cleans up the AVRO files.
 
     :param folder_path: Path to the folder containing AVRO files
     :param output_folder: Directory where processed data will be saved
     :param batch_size: Number of records in each batch
-    :param min_batch_size: Minimum number of AVRO files to trigger processing
     :param unique_id: Unique identifier for the batch run
     :param success_log: Path to the success log file
     :param error_log: Path to the error log file
     """
     avro_file_paths = shuffle_avro_file_paths(folder_path)
-    if len(avro_file_paths) >= min_batch_size:
-        records = read_avro_files(avro_file_paths[:min_batch_size])
-        print('Processing Records...')
-        save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
-        print('Done Saving Triplets. Cleaning up processed AVRO files...')
-        for file_path in avro_file_paths[:min_batch_size]:
-            safe_remove(file_path)
-        print('Cleanup completed.')
+    records = read_avro_files(avro_file_paths)
+    print('Processing Records...')
+    save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
+    print('Done Saving Triplets. Cleaning up processed AVRO files...')
+    for file_path in avro_file_paths:
+        safe_remove(file_path)
+    print('Cleanup completed.')
 
 
 def _float_feature(value):
@@ -333,7 +332,7 @@ def save_batch_and_log(output_folder, file_number, unique_id, batch_images, batc
             log.write(f"Failed to save batch data_{unique_id}_{file_number}.tfrecord: {e}\n")
 
 
-def main(urls_file, extract_to, output_folder, min_file_size, batch_size, min_batch_size, unique_id):
+def main(urls_file, extract_to, output_folder, min_file_size, batch_size, unique_id):
     """
     Main function to download, process, and manage AVRO files efficiently.
 
@@ -342,7 +341,6 @@ def main(urls_file, extract_to, output_folder, min_file_size, batch_size, min_ba
     :param output_folder: Directory where processed data will be saved
     :param min_file_size: Minimum file size in bytes to proceed with extraction
     :param batch_size: Number of records in each batch
-    :param min_batch_size: Minimum number of AVRO files to trigger processing
     :param unique_id: Unique identifier for the batch run
     """
     urls = load_urls_from_file(urls_file)
@@ -365,8 +363,12 @@ def main(urls_file, extract_to, output_folder, min_file_size, batch_size, min_ba
 
     # Process all AVRO files after downloading and extracting
     avro_files = list(Path(extract_to).glob('*.avro'))
-    if len(avro_files) >= min_batch_size:
-        process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, min_batch_size, unique_id, success_log, error_log)
+    if avro_files:
+        process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, unique_id, success_log, error_log)
+
+    # Remove the extract_to directory after processing
+    shutil.rmtree(extract_to)
+    print(f"Removed directory {extract_to}.")
 
 
 if __name__ == '__main__':
@@ -375,9 +377,8 @@ if __name__ == '__main__':
     parser.add_argument('--extract_to', required=True, help="Directory where tar.gz contents will be extracted")
     parser.add_argument('--output_folder', required=True, help="Directory where processed data will be saved")
     parser.add_argument('--min_file_size', type=int, default=512, help="Minimum file size in bytes to proceed with extraction")
-    parser.add_argument('--batch_size', type=int, default=20480, help="Number of records in each h5 file")
-    parser.add_argument('--min_batch_size', type=int, default=204800, help="Minimum number of AVRO files to trigger processing")
+    parser.add_argument('--batch_size', type=int, default=20480, help="Number of records in each TFRecord file")
     parser.add_argument('--unique_id', required=True, help="Unique identifier for the batch run")
 
     args = parser.parse_args()
-    main(args.urls_file, args.extract_to, args.output_folder, args.min_file_size, args.batch_size, args.min_batch_size, args.unique_id)
+    main(args.urls_file, args.extract_to, args.output_folder, args.min_file_size, args.batch_size, args.unique_id)
