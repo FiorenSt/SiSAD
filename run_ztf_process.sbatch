@@ -17,7 +17,7 @@
 BATCH_DIR="/path/to/batches"  # Replace with the path where the batch files are saved
 SCRIPT_PATH="/path/to/0.ALL_DOWNLOAD_TFRecords.py"  # Replace with the path to your main Python script
 BASE_EXTRACT_TO="/path/to/extracted"  # Base directory where tar.gz contents will be extracted
-BASE_OUTPUT_FOLDER="/path/to/output"  # Base directory where processed data will be saved
+OUTPUT_FOLDER="/path/to/output"  # Base directory where processed data will be saved
 
 # Get the current batch file
 BATCH_FILE=$(ls ${BATCH_DIR}/batch_*.txt | sed -n "${SLURM_ARRAY_TASK_ID}p")
@@ -27,7 +27,6 @@ UNIQUE_ID=$(basename ${BATCH_FILE} .txt)
 
 # Append unique identifier to paths
 EXTRACT_TO="${BASE_EXTRACT_TO}_${UNIQUE_ID}"
-OUTPUT_FOLDER="${BASE_OUTPUT_FOLDER}_${UNIQUE_ID}"
 
 # Run the Python script with the batch file
 python ${SCRIPT_PATH} --urls_file "${BATCH_FILE}" --extract_to "${EXTRACT_TO}" --output_folder "${OUTPUT_FOLDER}" --min_file_size 512 --batch_size 2048 --unique_id ${UNIQUE_ID}"
