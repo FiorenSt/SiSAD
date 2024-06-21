@@ -2,6 +2,7 @@
 #SBATCH --job-name=ztf_process
 #SBATCH --output=ztf_process_%A_%a.out
 #SBATCH --error=ztf_process_%A_%a.err
+#SBATCH -p RM-shared
 #SBATCH --array=1-N  # Replace N with the total number of batch files
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
