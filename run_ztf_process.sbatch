@@ -15,7 +15,7 @@
 
 # Set the paths
 BATCH_DIR="/path/to/batches"  # Replace with the path where the batch files are saved
-SCRIPT_PATH="/path/to/0.ALL_DOWNLOAD_TFRecords.py"  # Replace with the path to your main Python script
+SCRIPT_PATH="/path/to/0.SIMPLE_ALL_DOWNLOAD.py"  # Replace with the path to your main Python script
 BASE_EXTRACT_TO="/path/to/extracted"  # Base directory where tar.gz contents will be extracted
 OUTPUT_FOLDER="/path/to/output"  # Base directory where processed data will be saved
 
