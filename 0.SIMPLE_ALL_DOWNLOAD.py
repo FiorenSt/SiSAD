@@ -99,6 +99,7 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
             log.write(f"An unexpected error occurred with {filename}: {e}\n")
         return False
 
+
 def shuffle_avro_file_paths(folder_path, seed=42):
     """
     Shuffle the list of AVRO file paths in the specified folder.
@@ -230,21 +231,6 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
             log.write(f"Incomplete batch with {len(batch_images)} records discarded.\n")
 
 
-def safe_remove(file_path):
-    """
-    Safely remove a file, handling permission errors.
-
-    :param file_path: Path to the file to remove
-    """
-    try:
-        os.chmod(file_path, stat.S_IWRITE)
-        os.remove(file_path)
-    except PermissionError as e:
-        print(f"PermissionError: Could not remove {file_path}. Error: {e}")
-    except Exception as e:
-        print(f"Error: Could not remove {file_path}. Error: {e}")
-
-
 def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, unique_id, success_log, error_log):
     """
     Processes all AVRO files into TFRecords.
@@ -257,10 +243,14 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, uniqu
     :param error_log: Path to the error log file
     """
     avro_file_paths = shuffle_avro_file_paths(folder_path)
+    total_records = sum(1 for _ in read_avro_files(avro_file_paths))
+    total_batches = total_records // batch_size
+    print(f"Total TFRecord batches to be created: {total_batches}")
     records = read_avro_files(avro_file_paths)
     print('Processing Records...')
     save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
     print('Done Saving Triplets.')
+
 
 def _float_feature(value):
     """Returns a float_list from a float / double."""
@@ -346,8 +336,8 @@ def main(urls_file, extract_to, output_folder, min_file_size, batch_size, unique
     os.makedirs(extract_to, exist_ok=True)
 
     # Initialize log files in the specified output directory
-    success_log = os.path.join(output_folder, "success_log.txt")
-    error_log = os.path.join(output_folder, "error_log.txt")
+    success_log = os.path.join(output_folder, f"success_log_{unique_id}.txt")
+    error_log = os.path.join(output_folder, f"error_log_{unique_id}.txt")
 
     # Open and close the log files to ensure they exist
     open(success_log, 'a').close()
