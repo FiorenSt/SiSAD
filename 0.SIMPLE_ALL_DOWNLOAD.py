@@ -234,9 +234,6 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, uniqu
     :param error_log: Path to the error log file
     """
     avro_file_paths = shuffle_avro_file_paths(folder_path)
-    total_records = sum(1 for _ in read_avro_files(avro_file_paths))
-    total_batches = total_records // batch_size
-    print(f"Total TFRecord batches to be created: {total_batches}")
     records = read_avro_files(avro_file_paths)
     print('Processing Records...')
     save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
