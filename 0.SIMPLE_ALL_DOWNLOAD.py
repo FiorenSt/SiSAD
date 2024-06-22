@@ -16,7 +16,6 @@ from requests.packages.urllib3.util.retry import Retry
 import tensorflow as tf
 import shutil
 
-
 def load_urls_from_file(file_path, seed=42):
     """
     Loads URLs from a text file and shuffles them.
@@ -30,7 +29,6 @@ def load_urls_from_file(file_path, seed=42):
     random.seed(seed)
     random.shuffle(urls)
     return urls
-
 
 def safe_extract_tarfile(filepath, extract_to):
     """
@@ -47,7 +45,6 @@ def safe_extract_tarfile(filepath, extract_to):
                 print(f"Permission error occurred while extracting {member.name}: {e}. Skipping this file.")
             except Exception as e:
                 print(f"An unexpected error occurred while extracting {member.name}: {e}. Skipping this file.")
-
 
 def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
     """
@@ -99,7 +96,6 @@ def download_and_unzip(url, extract_to, min_file_size, success_log, error_log):
             log.write(f"An unexpected error occurred with {filename}: {e}\n")
         return False
 
-
 def shuffle_avro_file_paths(folder_path, seed=42):
     """
     Shuffle the list of AVRO file paths in the specified folder.
@@ -113,7 +109,6 @@ def shuffle_avro_file_paths(folder_path, seed=42):
     random.shuffle(file_paths)
     return file_paths
 
-
 def read_avro_files(file_paths):
     """
     Generator function to read records from a list of AVRO files.
@@ -126,7 +121,6 @@ def read_avro_files(file_paths):
             reader = fastavro.reader(f)
             for record in reader:
                 yield record
-
 
 def extract_and_process_image(fits_bytes, issdiffpos):
     """
@@ -144,7 +138,6 @@ def extract_and_process_image(fits_bytes, issdiffpos):
                 image_data *= -1
             return image_data
 
-
 def get_next_file_number(output_folder, unique_id):
     """
     Get the next file number for saving the output files in the output folder.
@@ -155,7 +148,6 @@ def get_next_file_number(output_folder, unique_id):
     """
     existing_files = list(Path(output_folder).glob(f'data_{unique_id}_*.tfrecord'))
     return 0 if not existing_files else max(int(file.stem.split('_')[-1]) for file in existing_files) + 1
-
 
 def save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log):
     """
@@ -230,7 +222,6 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
         with open(error_log, 'a') as log:
             log.write(f"Incomplete batch with {len(batch_images)} records discarded.\n")
 
-
 def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, unique_id, success_log, error_log):
     """
     Processes all AVRO files into TFRecords.
@@ -251,16 +242,13 @@ def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, uniqu
     save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log)
     print('Done Saving Triplets.')
 
-
 def _float_feature(value):
     """Returns a float_list from a float / double."""
     return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
 
-
 def _int64_feature(value):
     """Returns an int64_list from a bool / enum / int / uint."""
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
 
 def _bytes_feature(value):
     """Returns a bytes_list from a string / byte."""
@@ -269,7 +257,6 @@ def _bytes_feature(value):
     elif isinstance(value, str):
         value = value.encode('utf-8')
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
 
 def serialize_example(images, objectIds, candids, features):
     """
@@ -289,7 +276,6 @@ def serialize_example(images, objectIds, candids, features):
     }
     example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
     return example_proto.SerializeToString()
-
 
 def save_batch_and_log(output_folder, file_number, unique_id, batch_images, batch_objectIds, batch_candids, batch_other_features, success_log, error_log):
     """
@@ -313,10 +299,11 @@ def save_batch_and_log(output_folder, file_number, unique_id, batch_images, batc
                 writer.write(example)
         with open(success_log, 'a') as log:
             log.write(f"Saved batch in data_{unique_id}_{file_number}.tfrecord\n")
+        print(f"Saved batch in data_{unique_id}_{file_number}.tfrecord")
     except Exception as e:
         with open(error_log, 'a') as log:
             log.write(f"Failed to save batch data_{unique_id}_{file_number}.tfrecord: {e}\n")
-
+        print(f"Failed to save batch data_{unique_id}_{file_number}.tfrecord: {e}")
 
 def main(urls_file, extract_to, output_folder, min_file_size, batch_size, unique_id):
     """
@@ -355,7 +342,6 @@ def main(urls_file, extract_to, output_folder, min_file_size, batch_size, unique
     # Remove the extract_to directory after processing
     shutil.rmtree(extract_to)
     print(f"Removed directory {extract_to}.")
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Download, process, and manage AVRO files efficiently.")
