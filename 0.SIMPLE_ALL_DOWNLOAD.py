@@ -338,6 +338,10 @@ def main(urls_file, extract_to, output_folder, min_file_size, batch_size, unique
     avro_files = list(Path(extract_to).glob('*.avro'))
     if avro_files:
         process_and_cleanup_avro_batch(extract_to, output_folder, batch_size, unique_id, success_log, error_log)
+    else:
+        with open(error_log, 'a') as log:
+            log.write(f"No AVRO files found in {extract_to}\n")
+        print(f"No AVRO files found in {extract_to}")
 
     # Remove the extract_to directory after processing
     shutil.rmtree(extract_to)
