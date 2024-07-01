@@ -149,6 +149,7 @@ def get_next_file_number(output_folder, unique_id):
     existing_files = list(Path(output_folder).glob(f'data_{unique_id}_*.tfrecord'))
     return 0 if not existing_files else max(int(file.stem.split('_')[-1]) for file in existing_files) + 1
 
+
 def save_triplets_and_features_in_batches(records, output_folder, batch_size, unique_id, success_log, error_log):
     """
     Save triplet images and features in batches as TFRecord files.
@@ -170,10 +171,16 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
     for record in records:
         triplet_images = []
         correct_size = True
+
+        candidate = record.get('candidate', {})
+        isdiffpos = 1 if candidate.get('isdiffpos', 't') == 't' else 0
+
         for image_type in ['Science', 'Template', 'Difference']:
             fits_bytes = record[f'cutout{image_type}']['stampData']
-            isdiffpos = record.get('isdiffpos', 't')
-            image = extract_and_process_image(fits_bytes, isdiffpos if image_type == 'Difference' else 't')
+
+            # Apply isdiffpos inversion for the Difference image
+            image = extract_and_process_image(fits_bytes, 'f' if image_type == 'Difference' and isdiffpos == 0 else 't')
+            
             if image.shape == (63, 63):
                 triplet_images.append(image)
             else:
@@ -181,7 +188,6 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
                 break
 
         if correct_size:
-            candidate = record.get('candidate', {})
             objectId = record.get('objectId', 'NoObjectId')
             candid = int(candidate.get('candid', 0))
             numeric_features = [
@@ -205,7 +211,7 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
                 int(candidate.get('ncovhist', np.nan)),
                 float(candidate.get('jdstarthist', np.nan)),
                 float(candidate.get('jdendhist', np.nan)),
-                1 if candidate.get('isdiffpos', 't') == 't' else 0
+                isdiffpos
             ]
             batch_images.append(np.stack(triplet_images, axis=0))
             batch_objectIds.append(objectId)
@@ -221,6 +227,7 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
     if len(batch_images) > 0:
         with open(error_log, 'a') as log:
             log.write(f"Incomplete batch with {len(batch_images)} records discarded.\n")
+
 
 def process_and_cleanup_avro_batch(folder_path, output_folder, batch_size, unique_id, success_log, error_log):
     """
