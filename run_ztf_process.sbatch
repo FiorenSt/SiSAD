@@ -3,11 +3,11 @@
 #SBATCH --output=ztf_process_%A_%a.out
 #SBATCH --error=ztf_process_%A_%a.err
 #SBATCH -p RM-shared
-#SBATCH --array=1-N  # Replace N with the total number of batch files
+#SBATCH --array=1-3  # Replace N with the total number of batch files
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
+##SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=8G
+##SBATCH --mem=8G
 #SBATCH --time=12:00:00
 
 # Load necessary modules or activate environment
