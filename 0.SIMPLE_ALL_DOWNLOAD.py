@@ -122,19 +122,19 @@ def read_avro_files(file_paths):
             for record in reader:
                 yield record
 
-def extract_and_process_image(fits_bytes, issdiffpos):
+def extract_and_process_image(fits_bytes, isdiffpos):
     """
     Extracts and processes FITS image data from gzipped bytes.
 
     :param fits_bytes: Gzipped bytes of the FITS image
-    :param issdiffpos: Indicator if the image is a difference image (inverts if 'f')
+    :param isdiffpos: Indicator if the image is a difference image (inverts if 'f')
     :return: Processed image data as a numpy array
     """
     with gzip.open(io.BytesIO(fits_bytes), 'rb') as gz:
         with fits.open(io.BytesIO(gz.read())) as hdul:
             image_data = hdul[0].data.astype(np.float32)
-            # Check if issdiffpos is 'f', and if so, invert the image data
-            if issdiffpos == 'f':
+            # Check if isdiffpos is 'f', and if so, invert the image data
+            if isdiffpos == 'f':
                 image_data *= -1
             return image_data
 
@@ -172,8 +172,8 @@ def save_triplets_and_features_in_batches(records, output_folder, batch_size, un
         correct_size = True
         for image_type in ['Science', 'Template', 'Difference']:
             fits_bytes = record[f'cutout{image_type}']['stampData']
-            issdiffpos = record.get('issdiffpos', 't')
-            image = extract_and_process_image(fits_bytes, issdiffpos if image_type == 'Difference' else 't')
+            isdiffpos = record.get('isdiffpos', 't')
+            image = extract_and_process_image(fits_bytes, isdiffpos if image_type == 'Difference' else 't')
             if image.shape == (63, 63):
                 triplet_images.append(image)
             else:
